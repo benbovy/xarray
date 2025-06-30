@@ -18,6 +18,7 @@ from xarray.core.indexes import (
     PandasIndex,
     PandasMultiIndex,
     indexes_all_equal,
+    indexes_equal,
     safe_cast_to_index,
 )
 from xarray.core.types import T_Alignable
@@ -346,6 +347,28 @@ class Aligner(Generic[T_Alignable]):
           pandas). This is useful, e.g., for overwriting such duplicate indexes.
 
         """
+        if not dim:
+            # special case for indexes with no associated dimension (scalar variable):
+            # re-indexing makes no sense, we raise as soon as two indexes are not equal
+            index_cmp_cache: dict[tuple[int, int], bool | None] = {}
+            index0, index0_vars = cmp_indexes[0]
+            for other_index, other_index_vars in cmp_indexes[1:]:
+                for name in index0_vars:
+                    is_equal = indexes_equal(
+                        index0,
+                        other_index,
+                        index0_vars[name],
+                        other_index_vars[name],
+                        index_cmp_cache,
+                    )
+                    if not is_equal:
+                        raise AlignmentError(
+                            f"conflicting values/indexes on objects to be aligned for coordinate {name!r}\n"
+                            f"first index: {index0!r}\nsecond index: {other_index!r}\n"
+                            f"first variable: {index0_vars[name]!r}\nsecond variable: {other_index_vars[name]!r}\n"
+                        )
+            return False
+
         if not indexes_all_equal(cmp_indexes, self.exclude_dims):
             # always reindex when matching indexes are not equal
             return True
